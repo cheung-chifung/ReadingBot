@@ -41,7 +41,7 @@ type PostCallbackData struct {
 	PostID uint `json:"id"`
 }
 
-const postQueueChunkSize = 5
+const postListChunkSize = 5
 const postPostMaxCount = 2
 
 func NewBotServer(botToken, botChannel, botDBFile string) *BotServer {
@@ -81,6 +81,7 @@ func (b *BotServer) Start() error {
 
 	b.bot.Handle("/start", b.HandleStart)
 	b.bot.Handle("/queue", b.HandleQueue)
+	b.bot.Handle("/draft", b.HandleDraft)
 	b.bot.Handle("/publish", b.HandlePublish)
 	b.bot.Handle(tb.OnText, b.HandleDefaultText)
 	b.bot.Handle(&postReadyBtn, b.HandlePostReadyCallback)
@@ -102,19 +103,27 @@ func (b *BotServer) HandlePublish(msg *tb.Message) {
 	b.bot.Send(msg.Sender, "Published")
 }
 
+func (b *BotServer) HandleDraft(msg *tb.Message) {
+	b.listPosts(msg, PostStatusDraft)
+}
+
 func (b *BotServer) HandleQueue(msg *tb.Message) {
-	posts, count, err := b.postMgr.GetPostsInQueue(0)
+	b.listPosts(msg, PostStatusReady)
+}
+
+func (b *BotServer) listPosts(msg *tb.Message, status PostStatus) {
+	posts, count, err := b.postMgr.GetPosts(0, status)
 	if err != nil {
-		logrus.WithError(err).Warn("cannot load posts in queue")
+		logrus.WithError(err).Warn("cannot load posts")
 		return
 	}
-	b.bot.Send(msg.Sender, fmt.Sprintf("%d posts in queue.", count))
+	b.bot.Send(msg.Sender, fmt.Sprintf("%d posts.", count))
 
 	i := 1
 	selected := []*Post{}
 	for {
-		if len(posts) > postQueueChunkSize {
-			selected, posts = posts[:postQueueChunkSize], posts[postQueueChunkSize:]
+		if len(posts) > postListChunkSize {
+			selected, posts = posts[:postListChunkSize], posts[postListChunkSize:]
 		} else {
 			selected, posts = posts, []*Post{}
 		}
@@ -131,7 +140,6 @@ func (b *BotServer) HandleQueue(msg *tb.Message) {
 			DisableNotification:   true,
 		})
 	}
-
 }
 
 func (b *BotServer) HandlePostReadyCallback(cb *tb.Callback) {
@@ -326,7 +334,7 @@ func (b *BotServer) PublishPosts(limit int) error {
 	logrus.Printf("Publishing comment to %s", b.botChannel)
 	ch := &tb.Chat{Username: b.botChannel, Type: tb.ChatChannel}
 
-	posts, _, err := b.postMgr.GetPostsInQueue(limit)
+	posts, _, err := b.postMgr.GetPosts(limit, PostStatusReady)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-# KeeReadingBot
+# ReadingBot
 
 A bot for web page sharing
 

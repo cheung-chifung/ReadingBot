@@ -198,8 +198,8 @@ func (pm *PostManager) GetPostByURL(url *url.URL) (*Post, error) {
 	return &p, nil
 }
 
-func (pm *PostManager) GetPostsInQueue(limit int) (posts []*Post, count int, err error) {
-	q := pm.db.Where("status = ?", PostStatusReady)
+func (pm *PostManager) GetPosts(limit int, status PostStatus) (posts []*Post, count int, err error) {
+	q := pm.db.Where("status = ?", status)
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
