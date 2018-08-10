@@ -1,15 +1,12 @@
-linux_amd64 := GOOS=linux GOARCH=amd64
-gobuild := go build
-
 BIN := dist/bot
 BIN_AMD64 := dist/bot_amd64
 
 $(BIN):
-	@$(gobuild) -o $@ .
+	@go build -o $@ .
 	@chmod +x $@
 
 $(BIN_AMD64):
-	@$(linux_amd64) $(gobuild) -o $@ .
+	@go build -o $@ .
 	@chmod +x $@
 
 docker: clean $(BIN_AMD64)
@@ -20,3 +17,4 @@ docker-push:
 
 clean:
 	@rm -f $(BIN)
+	@rm -f $(BIN_AMD64)

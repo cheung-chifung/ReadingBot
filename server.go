@@ -47,7 +47,7 @@ const postPostMaxCount = 2
 func NewBotServer(botToken, botChannel, botDBFile string) *BotServer {
 	db, err := gorm.Open("sqlite3", botDBFile)
 	if err != nil {
-		logrus.Fatal("cannot open db")
+		logrus.WithError(err).WithField("bot_db_file", botDBFile).Fatal("cannot open db")
 	}
 	db.AutoMigrate(&Post{})
 	return &BotServer{
