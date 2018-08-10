@@ -133,6 +133,7 @@ func (b *BotServer) listPosts(msg *tb.Message, status PostStatus) {
 		res := ""
 		for _, p := range selected {
 			res += fmt.Sprintf("%d. %s", i, p.MarkdownSummary())
+			i++
 		}
 		b.bot.Send(msg.Sender, res, &tb.SendOptions{
 			ParseMode:             tb.ModeMarkdown,
