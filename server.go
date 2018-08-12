@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -30,11 +32,13 @@ var (
 )
 
 type BotServer struct {
-	botToken   string
-	botChannel string
-	botDBFile  string
-	bot        *tb.Bot
-	postMgr    PostManager
+	botToken         string
+	botChannel       string
+	botDBFile        string
+	iftttTriggerName string
+	iftttTriggerKey  string
+	bot              *tb.Bot
+	postMgr          PostManager
 }
 
 type PostCallbackData struct {
@@ -44,17 +48,21 @@ type PostCallbackData struct {
 const postListChunkSize = 5
 const postPostMaxCount = 2
 
-func NewBotServer(botToken, botChannel, botDBFile string) *BotServer {
+func NewBotServer(
+	botToken, botChannel, botDBFile,
+	iftttTriggerName, iftttTriggerKey string) *BotServer {
 	db, err := gorm.Open("sqlite3", botDBFile)
 	if err != nil {
 		logrus.WithError(err).WithField("bot_db_file", botDBFile).Fatal("cannot open db")
 	}
 	db.AutoMigrate(&Post{})
 	return &BotServer{
-		botToken:   botToken,
-		botChannel: botChannel,
-		botDBFile:  botDBFile,
-		postMgr:    NewPostManager(db),
+		botToken:         botToken,
+		botChannel:       botChannel,
+		botDBFile:        botDBFile,
+		iftttTriggerName: iftttTriggerName,
+		iftttTriggerKey:  iftttTriggerKey,
+		postMgr:          NewPostManager(db),
 	}
 }
 
@@ -76,8 +84,9 @@ func (b *BotServer) Start() error {
 		_ = b.PublishPosts(postPostMaxCount)
 	}
 
+	// At 10:00, 19:00 JST
+	scheduler.Every().Day().At("1:00").Run(publishJob)
 	scheduler.Every().Day().At("10:00").Run(publishJob)
-	scheduler.Every().Day().At("19:00").Run(publishJob)
 
 	b.bot.Handle("/start", b.HandleStart)
 	b.bot.Handle("/queue", b.HandleQueue)
@@ -331,6 +340,12 @@ func (b *BotServer) HandleDefaultText(msg *tb.Message) {
 	}
 }
 
+type IftttTrigger struct {
+	PostTitle      string `json:"value1"`
+	PostText       string `json:"value2"`
+	PostPublicLink string `json:"value3"`
+}
+
 func (b *BotServer) PublishPosts(limit int) error {
 	logrus.Printf("Publishing comment to %s", b.botChannel)
 	ch := &tb.Chat{Username: b.botChannel, Type: tb.ChatChannel}
@@ -339,12 +354,25 @@ func (b *BotServer) PublishPosts(limit int) error {
 	if err != nil {
 		return err
 	}
+
+	wbURL := fmt.Sprintf("https://maker.ifttt.com/trigger/%s/with/key/%s", b.iftttTriggerName, b.iftttTriggerKey)
+	logrus.Println(wbURL)
 	for _, p := range posts {
-		_, err := b.bot.Send(ch, p.MarkdownPublish(), &tb.SendOptions{
+		res, err := b.bot.Send(ch, p.MarkdownPublish(), &tb.SendOptions{
 			ParseMode: tb.ModeMarkdown,
 		})
 		if err != nil {
 			logrus.WithError(err).WithField("post_id", p.ID).Warn("cannot post")
+		}
+		postData, _ := json.Marshal(IftttTrigger{
+			PostTitle:      p.Title,
+			PostText:       p.Comment,
+			PostPublicLink: fmt.Sprintf("https://t.me/%s/%d", b.botChannel, res.ID),
+		})
+		resp, err := http.Post(wbURL, "application/json", bytes.NewBuffer(postData))
+		resp.Body.Close()
+		if err != nil {
+			logrus.WithError(err).WithField("post_id", p.ID).Warn("cannot post to webhook")
 		}
 		b.postMgr.UpdatePostStatus(p.ID, PostStatusReady, PostStatusPublished)
 	}
